@@ -1,0 +1,6 @@
+node_modules/
+local-textures/
+dist/
+.env*
+!.env.example
+.DS_Store
