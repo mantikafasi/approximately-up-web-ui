@@ -42,6 +42,8 @@ const scenePoint = p => new THREE.Vector3(p[0] / METRES_PER_UNIT, p[1] / METRES_
 const pos = body => scenePoint(body.position);
 const markerSize = body => body.kind === 'Star' ? 3.8 : body.kind === 'Anomaly' ? 3 : Math.max(1.5, Math.log10(body.radius / 1000) * 0.85);
 let trueSize = false;
+let activeWorld = 0;
+let activeBodies = bodies.filter(body => body.world === activeWorld);
 let selected = bodies.find(body => body.name === 'Earth');
 let userPosition = null;
 let measureLine = null;
@@ -66,6 +68,7 @@ function makeGlow(color, size) {
 for (const body of bodies) {
   const group = new THREE.Group();
   group.position.copy(pos(body));
+  group.visible = body.world === activeWorld;
   scene.add(group);
   body.group = group;
   body.renderRadius = markerSize(body);
@@ -103,7 +106,7 @@ for (const body of bodies) {
   group.add(hit);
   body.visuals = group.children.filter(child => child !== hit);
   if (body.kind === 'Anomaly') body.anomalyScales = body.visuals.map(visual => visual.scale.clone());
-  meshes.push(hit);
+  if (group.visible) meshes.push(hit);
   const label = document.createElement('span');
   label.className = 'body-label';
   label.textContent = body.name.toUpperCase();
@@ -205,11 +208,11 @@ $('game-textures').addEventListener('change', async event => {
   }
 });
 window.addEventListener('pagehide', () => bodies.forEach(body => { if (body.surfaceUrl) URL.revokeObjectURL(body.surfaceUrl); }));
-$('body-count').textContent = `${bodies.length} OBJECTS`;
-$('search').addEventListener('input', event => {
-  const query = event.target.value.trim().toLowerCase();
-  for (const body of bodies) body.button.hidden = !body.name.toLowerCase().includes(query) && !body.kind.toLowerCase().includes(query);
-});
+function filterBodyList() {
+  const query = $('search').value.trim().toLowerCase();
+  for (const body of bodies) body.button.hidden = body.world !== activeWorld || (!body.name.toLowerCase().includes(query) && !body.kind.toLowerCase().includes(query));
+}
+$('search').addEventListener('input', filterBodyList);
 window.addEventListener('keydown', event => {
   if (event.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
     event.preventDefault(); $('search').focus();
@@ -244,11 +247,13 @@ function selectBody(body, moveCamera = false) {
 }
 $('focus-selected').addEventListener('click', () => focus(pos(selected), 105));
 const bounds = new THREE.Box3();
-for (const body of bodies) bounds.expandByPoint(body.group.position);
-const system = bounds.getBoundingSphere(new THREE.Sphere());
+const system = new THREE.Sphere();
 function fitMap() {
   if (!controls) return;
   setTrueSize(false);
+  bounds.makeEmpty();
+  for (const body of activeBodies) bounds.expandByPoint(body.group.position);
+  bounds.getBoundingSphere(system);
   const vfov = THREE.MathUtils.degToRad(camera.fov);
   const halfFov = Math.atan(Math.tan(vfov / 2) * Math.min(1, camera.aspect));
   const range = system.radius / Math.sin(halfFov) * 1.06;
@@ -271,7 +276,7 @@ function setTrueSize(value) {
 $('scale-toggle').addEventListener('click', () => setTrueSize(!trueSize));
 
 function locationOf(value) {
-  return value === '@position' ? userPosition : bodies.find(body => body.name === value)?.position;
+  return value === '@position' ? userPosition : activeBodies.find(body => body.name === value)?.position;
 }
 function updateMeasurement() {
   $('route-point').hidden = true;
@@ -309,23 +314,49 @@ function selectRoutePoint(fraction) {
   routeMarker.position.copy(scenePoint(position));
   routeMarker.visible = true;
   const title = document.createElement('strong');
-  title.textContent = `${formatMetres(metres)} from Sun`;
+  title.textContent = `${formatMetres(metres)} from ${activeWorld === 0 ? 'Sun' : 'GPS origin'}`;
   const detail = document.createElement('small');
   detail.textContent = `${metres.toLocaleString('en-US', { maximumFractionDigits: 1 })} m · ${(fraction * 100).toFixed(1)}% along ${$('measure-from').value === '@position' ? 'your position' : $('measure-from').value} → ${$('measure-to').value === '@position' ? 'your position' : $('measure-to').value}`;
   $('route-point').replaceChildren(title, detail);
   $('route-point').hidden = false;
 }
 for (const select of [$('measure-from'), $('measure-to')]) {
-  for (const body of bodies) select.add(new Option(body.name, body.name));
-  select.add(new Option('Your position', '@position'));
   select.addEventListener('change', updateMeasurement);
 }
-$('measure-to').value = 'Sun';
-selectBody(selected);
+function changeWorld() {
+  activeWorld = Number($('map-world').value);
+  activeBodies = bodies.filter(body => body.world === activeWorld);
+  meshes.length = 0;
+  for (const body of bodies) {
+    body.group.visible = body.world === activeWorld;
+    if (body.group.visible) meshes.push(body.hit);
+  }
+  filterBodyList();
+  const worldName = activeWorld === 0 ? 'REGULAR UNIVERSE' : 'THROUGH THE BLACK HOLE';
+  $('charted-world').textContent = worldName;
+  $('charted-count').textContent = `${activeBodies.length} CHARTED OBJECTS`;
+  $('map-title').textContent = worldName;
+  $('map-status').textContent = activeWorld === 0 ? 'SUN-CENTRED CHART' : 'SEPARATE WORMHOLE WORLD';
+  $('body-count').textContent = `${activeBodies.length} OBJECTS`;
+  $('gps-centre-label').textContent = activeWorld === 0 ? 'CENTRE · SUN-CENTRED GPS' : 'CENTRE · GPS ORIGIN COORDINATES';
+  $('route-hint').textContent = `Click anywhere on the dashed route to see that point's straight-line distance to ${activeWorld === 0 ? 'the Sun' : 'the GPS coordinate origin (not a Sun in this world)'}. Measurements and location lookup use only this map. Surface gap uses spherical mean radii; negative means overlap. No orbit or travel-time prediction.`;
+  for (const select of [$('measure-from'), $('measure-to')]) {
+    select.replaceChildren(...activeBodies.map(body => new Option(body.name, body.name)), new Option('Your position', '@position'));
+  }
+  $('measure-to').value = activeWorld === 0 ? 'Sun' : activeBodies[1].name;
+  userPosition = null;
+  if (userMarker) userMarker.visible = false;
+  $('position-result').classList.remove('error');
+  $('position-result').textContent = 'Choose the map matching your game world, then enter Space GPS readings and press Locate me.';
+  selectBody(selected.world === activeWorld ? selected : activeBodies[0]);
+  fitMap();
+}
+$('map-world').addEventListener('change', changeWorld);
+changeWorld();
 
 function locate(position) {
   userPosition = position;
-  const nearby = nearestBody(position, bodies);
+  const nearby = nearestBody(position, activeBodies);
   const name = nearby.body.name;
   const surface = nearby.surface == null ? 'not defined for this anomaly' : `${formatMetres(nearby.surface)} ${nearby.surface < 0 ? 'below mean surface' : 'from mean surface'}`;
   $('position-result').classList.remove('error');
@@ -340,6 +371,7 @@ function locate(position) {
     labels.push({ position: userMarker.position, element: label, body: null });
   }
   userMarker.position.copy(scenePoint(position));
+  userMarker.visible = true;
   setTrueSize(false);
   focus(userMarker.position, Math.max(14, Math.min(75, nearby.centre / METRES_PER_UNIT * 1.4)));
   updateMeasurement();
@@ -403,7 +435,7 @@ if (renderer) {
     requestAnimationFrame(animate);
     controls.update();
     const unitPerPixel = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) / canvasHost.clientHeight;
-    for (const body of bodies) {
+    for (const body of activeBodies) {
       const base = body.radius == null ? 0 : body.radius / METRES_PER_UNIT;
       const distanceToCamera = camera.position.distanceTo(body.group.position);
       body.renderRadius = trueSize ? base || 3 : Math.max(base, distanceToCamera * unitPerPixel * (body.kind === 'Star' ? 22 : 18), body === selected ? 8 : 0);
@@ -416,13 +448,14 @@ if (renderer) {
     camera.getWorldDirection(forward);
     occupied.length = 0;
     for (const { position, element, body } of labels) {
+      if (body ? !body.group.visible : !userMarker?.visible) { element.hidden = true; continue; }
       projected.copy(position).project(camera);
       labelDirection.copy(position).sub(camera.position);
       const labelDistance = labelDirection.length();
       let visible = labelDirection.dot(forward) > 0 && Math.abs(projected.x) < 1.06 && Math.abs(projected.y) < 1.06;
       if (visible && body && labelDistance > 0) {
         labelDirection.divideScalar(labelDistance);
-        for (const other of bodies) {
+        for (const other of activeBodies) {
           if (other === body) continue;
           occluderDirection.copy(other.group.position).sub(camera.position);
           const along = occluderDirection.dot(labelDirection);

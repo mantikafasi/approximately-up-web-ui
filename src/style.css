@@ -45,6 +45,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .texture-import
 .sidebar h1 { margin: 17px 0 12px; font: 600 31px/1.12 'Space Grotesk', sans-serif; letter-spacing: -.05em; }
 .sidebar h1 em { font-style: normal; color: #e8ba7c; }
 .sidebar-head p { margin: 0; color: #aabac0; line-height: 1.55; font-size: 13px; }
+.world-picker { display: block; margin: 0 17px 14px; color: #e8ba7c; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
 .search-wrap {
   margin: 6px 17px 21px; height: 45px; display: flex; align-items: center; gap: 9px;
   border: 1px solid #344550; background: #18242e; border-radius: 4px; padding: 0 12px; color: #c1ccd0;
@@ -128,7 +129,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .texture-import
 .gps-fields { grid-template-columns: 1fr 1fr; }
 .gps-fields label:first-child { grid-column: 1 / -1; }
 .coord-fields label, .select-row label { min-width: 0; color: #c9d4d2; font-size: 11px; font-weight: 700; letter-spacing: .045em; }
-.coord-fields input, .select-row select {
+.coord-fields input, .select-row select, .world-picker select {
   display: block; width: 100%; min-width: 0; height: 41px; margin-top: 6px; padding: 0 10px;
   background: #192630; border: 1px solid #4a5a63; border-radius: 3px; color: #f1f3ef; font-size: 14px; letter-spacing: 0;
 }
